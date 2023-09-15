@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 clap="*"
 rand="*"
-nix={version="*",features=["signal"]}
+nix={version="*",features=["signal","ptrace"]}
+linux-personality = "1.0"
