@@ -12,6 +12,14 @@ extern crate linux_personality;
 use linux_personality::personality;
 use nix::sys::signal::Signal;
 use std::ffi::c_void;
+
+use crate::config;
+
+pub enum ParentStatus {
+    Finished(Vec<u64>),
+    Crash(u64),
+}
+
 fn set_breakpoint(pid: Pid, addr: u64) -> i64 {
     // Read 8 bytes from the process memory
     let value = ptrace::read(pid, (addr) as *mut c_void).unwrap() as u64;
@@ -32,7 +40,7 @@ fn restore_breakpoint(pid: Pid, addr: u64, orig_value: i64) {
         ptrace::write(pid, addr as *mut c_void, orig_value as *mut c_void).unwrap();
     }
 }
-fn handle_sigstop(pid: Pid, saved_values: &HashMap<u64, i64>) {
+fn handle_sigstop(pid: Pid, saved_values: &HashMap<u64, i64>, trace: &mut Vec<u64>) {
     let mut regs = ptrace::getregs(pid).unwrap();
     println!("Hit breakpoint at 0x{:x}", regs.rip - 1);
     match saved_values.get(&(regs.rip - 1)) {
@@ -41,6 +49,7 @@ fn handle_sigstop(pid: Pid, saved_values: &HashMap<u64, i64>) {
 
             // rewind rip
             regs.rip -= 1;
+            trace.push(regs.rip);
             ptrace::setregs(pid, regs).expect("Error rewinding RIP");
         }
         _ => print!("Nothing saved here"),
@@ -72,11 +81,15 @@ fn get_executable_base(filename: String) -> Option<u64> {
     }
 }
 // Code that runs only for child
-pub fn run_child(bp_map: &Vec<u64>, bp_mapping: &mut HashMap<u64, i64>) -> Pid {
+pub fn run_child(
+    config: &config::RuntimeConcig,
+    bp_mapping: &mut HashMap<u64, i64>,
+    filename: &str,
+) -> Pid {
     // Execute binary spawning new process
     let child = unsafe {
-        Command::new("/home/v/fuzzer/rfuzz/exif")
-            .arg("/home/v/fuzzer/rfuzz/1.jpg")
+        Command::new(&config.exec_name)
+            .arg(filename)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .pre_exec(|| {
@@ -94,7 +107,7 @@ pub fn run_child(bp_map: &Vec<u64>, bp_mapping: &mut HashMap<u64, i64>) -> Pid {
             let base = get_executable_base(format!("/proc/{}/maps", res))
                 .expect("[!] Failed to get executable base!");
 
-            for bp in bp_map {
+            for bp in &config.bpmap {
                 bp_mapping.insert(base + bp, set_breakpoint(res, base + bp));
             }
             ptrace::cont(res, None).expect("Should have continued");
@@ -104,26 +117,26 @@ pub fn run_child(bp_map: &Vec<u64>, bp_mapping: &mut HashMap<u64, i64>) -> Pid {
     res
 }
 // Code that runs only for parent
-pub fn run_parent(pid: Pid, breakpoints: &Vec<u64>, bp_mapping: &HashMap<u64, i64>) {
+pub fn run_parent(
+    pid: Pid,
+    breakpoints: &Vec<u64>,
+    bp_mapping: &HashMap<u64, i64>,
+) -> ParentStatus {
     //cal converage
-    let all_map_count = breakpoints.capacity();
-    let mut hit_count = 0;
 
-    let mut _trace: Vec<u64> = Vec::new();
+    let mut trace: Vec<u64> = Vec::new();
 
     loop {
-        println!("{}/{}", hit_count, all_map_count);
         match waitpid(pid, None) {
             Ok(WaitStatus::Stopped(pid_t, sig_num)) => match sig_num {
                 Signal::SIGTRAP => {
-                    hit_count += 1;
-                    handle_sigstop(pid_t, &bp_mapping);
+                    handle_sigstop(pid_t, &bp_mapping, &mut trace);
                 }
 
                 Signal::SIGSEGV => {
                     let regs = ptrace::getregs(pid_t).unwrap();
                     println!("Segmentation fault at 0x{:x}", regs.rip);
-                    break;
+                    return ParentStatus::Crash(regs.rip);
                 }
                 _ => {
                     println!("Some other signal - {}", sig_num);
@@ -131,13 +144,7 @@ pub fn run_parent(pid: Pid, breakpoints: &Vec<u64>, bp_mapping: &HashMap<u64, i6
                 }
             },
 
-            Ok(WaitStatus::Exited(pid, exit_status)) => {
-                // println!(
-                //     "Process with pid: {} exited with status {}",
-                //     pid, exit_status
-                // );
-                break;
-            }
+            Ok(WaitStatus::Exited(_, _)) => return ParentStatus::Finished(trace),
 
             Ok(status) => {
                 println!("Received status: {:?}", status);
@@ -149,6 +156,8 @@ pub fn run_parent(pid: Pid, breakpoints: &Vec<u64>, bp_mapping: &HashMap<u64, i6
             }
         }
     }
+
+    ParentStatus::Finished(trace)
 }
 // fn main() {
 //     // breakpoints to set

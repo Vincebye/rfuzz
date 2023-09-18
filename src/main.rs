@@ -8,9 +8,12 @@ use std::{
     io::{self, BufRead, BufReader, Read, Write},
     time::Instant,
 };
+mod config;
 mod execute;
 mod forkserver;
 mod mutate;
+
+const FILE: &str = "mutated.jpg";
 fn write_to_file(data: &[u8]) -> std::io::Result<()> {
     if let Err(e) = fs::remove_file("mutated.jpg") {
         if e.kind() != std::io::ErrorKind::NotFound {
@@ -53,7 +56,7 @@ struct FuzzingStats {
 }
 
 fn main() -> io::Result<()> {
-    let _matches = Command::new("Rfuzz")
+    let matches = Command::new("Rfuzz")
         .arg(
             Arg::new("target")
                 .short('t')
@@ -62,20 +65,65 @@ fn main() -> io::Result<()> {
                 .required(false)
                 .help("The target to be fuzzed"),
         )
+        .arg(
+            Arg::new("corpus")
+                .short('c')
+                .long("corpus")
+                .value_name("CORPUS")
+                .required(false)
+                .help("File corpus consumed by the fuzzer"),
+        )
+        .arg(
+            Arg::new("bpmap")
+                .short('b')
+                .long("bpmap")
+                .value_name("BPMAP")
+                .required(false)
+                .help("The function breakmap list"),
+        )
         .get_matches();
+    //cargo run -- -target /home/v/fuzzer/rfuzz/exif -corpus /home/v/fuzzer/rfuzz/data/corpus -bpmap /home/v/fuzzer/rfuzz/data/breakpoints.map
+    let runtime_config = config::RuntimeConcig::new(matches);
+    println!("{:?}", runtime_config);
 
-    let bpfile_path = "/home/v/fuzzer/rfuzz/data/breakpoints.map";
+    //init the Mutator Engine
+    let mut mutator = mutate::Mutator::new();
 
+    mutator.consume(&runtime_config.corpus);
+    let mut sample_pool: Vec<mutate::Sample> = vec![];
     let mut stats = FuzzingStats::default();
-    let bp_map = read_to_vec(bpfile_path)?;
-    let _bp_count = bp_map.capacity();
-    println!("{}", _bp_count);
     let mut bp_mapping: HashMap<u64, i64> = HashMap::new();
-    loop {
-        let child = forkserver::run_child(&bp_map, &mut bp_mapping);
-        stats.execute_count += 1;
-        forkserver::run_parent(child, &bp_map, &bp_mapping);
+    let start = Instant::now();
+    let mut flag = true;
+    while flag {
+        for mut sample in &mut mutator {
+            sample.materialize_sample(FILE);
+            let child = forkserver::run_child(&runtime_config, &mut bp_mapping, FILE);
+            stats.execute_count += 1;
+            match forkserver::run_parent(child, &runtime_config.bpmap, &bp_mapping) {
+                forkserver::ParentStatus::Finished(trace) => {
+                    sample.add_trace(trace);
+                    sample_pool.push(sample);
+                }
+                forkserver::ParentStatus::Crash(rip) => {
+                    stats.crash_count += 1;
+                    let crash_filename = format!("crash_{}", rip);
+                    fs::copy(FILE, crash_filename);
+                    flag = false;
+                }
+            }
+        }
+
+        mutator.update(&sample_pool);
     }
+    let elapsed = start.elapsed().as_secs_f64();
+    print!(
+        "[{:10.2}] cases {:10} | fcps  {:10.2} | crashes {:10}\n",
+        elapsed,
+        stats.execute_count,
+        stats.execute_count as f64 / elapsed,
+        stats.crash_count
+    );
     // let mut file = File::open("1.jpg").expect("filed to open the file");
     // let mut buffer = Vec::new();
     // file.read_to_end(&mut buffer).expect("Failed yo read file");
