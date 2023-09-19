@@ -49,9 +49,6 @@ fn main() -> io::Result<()> {
         .get_matches();
 //cargo run -- -target /home/v/fuzzer/rfuzz/exif -corpus /home/v/fuzzer/rfuzz/data/corpus -bpmap /home/v/fuzzer/rfuzz/data/breakpoints.map
     let runtime_config = config::RuntimeConcig::new(matches);
-    println!("{:?}", runtime_config);
-    
-    
     //init the Mutator Engine
     let mut mutator = mutate::Mutator::new();
 
