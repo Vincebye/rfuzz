@@ -119,7 +119,6 @@ pub fn run_child(
 // Code that runs only for parent
 pub fn run_parent(
     pid: Pid,
-    breakpoints: &Vec<u64>,
     bp_mapping: &HashMap<u64, i64>,
 ) -> ParentStatus {
     //cal converage
@@ -159,19 +158,3 @@ pub fn run_parent(
 
     ParentStatus::Finished(trace)
 }
-// fn main() {
-//     // breakpoints to set
-//     let breakpoints: [u64; 1] = [0x5555555553b1];
-//     match unsafe{fork()} {
-//         Ok(ForkResult::Child) => {
-//             run_child();
-//         }
-//         Ok(ForkResult::Parent {child}) => {
-//             run_parent(child, &breakpoints);
-//         }
-
-//         Err(err) => {
-//             panic!("[main] fork() failed: {}", err);
-//         }
-//     };
-// }
