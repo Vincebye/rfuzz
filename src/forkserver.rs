@@ -1,7 +1,7 @@
 use nix::sys::ptrace;
 use nix::sys::wait::{wait, waitpid, WaitStatus};
 use nix::unistd::{fork, ForkResult, Pid};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::os::unix::process::CommandExt;
@@ -40,13 +40,13 @@ fn restore_breakpoint(pid: Pid, addr: u64, orig_value: i64) {
         ptrace::write(pid, addr as *mut c_void, orig_value as *mut c_void).unwrap();
     }
 }
-fn handle_sigstop(pid: Pid, saved_values: &HashMap<u64, i64>, trace: &mut Vec<u64>) {
+fn handle_sigstop(pid: Pid, saved_values: &HashMap<u64, i64>, trace: &mut Vec<u64>,hit_breakpoints:&mut HashSet<u64>) {
     let mut regs = ptrace::getregs(pid).unwrap();
     println!("Hit breakpoint at 0x{:x}", regs.rip - 1);
+    hit_breakpoints.insert(regs.rip - 1);
     match saved_values.get(&(regs.rip - 1)) {
         Some(orig) => {
             restore_breakpoint(pid, regs.rip - 1, *orig);
-
             // rewind rip
             regs.rip -= 1;
             trace.push(regs.rip);
@@ -120,6 +120,7 @@ pub fn run_child(
 pub fn run_parent(
     pid: Pid,
     bp_mapping: &HashMap<u64, i64>,
+    hit_breakpoints:&mut HashSet<u64>
 ) -> ParentStatus {
     //cal converage
 
@@ -129,7 +130,7 @@ pub fn run_parent(
         match waitpid(pid, None) {
             Ok(WaitStatus::Stopped(pid_t, sig_num)) => match sig_num {
                 Signal::SIGTRAP => {
-                    handle_sigstop(pid_t, &bp_mapping, &mut trace);
+                    handle_sigstop(pid_t, &bp_mapping, &mut trace,hit_breakpoints);
                 }
 
                 Signal::SIGSEGV => {

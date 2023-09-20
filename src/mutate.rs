@@ -35,10 +35,10 @@ impl Mutator {
             match &sample.trace {
                 Some(trace) => {
                     if !self.trace_list.contains(trace) {
-                        println!(
-                            "[-]New coverage for input {:?} [{:?}]",
-                            sample.data, sample.method
-                        );
+                        // println!(
+                        //     "[-]New coverage for input {:?} [{:?}]",
+                        //     sample.data, sample.method
+                        // );
                         self.trace_list.insert(trace.clone());
                         self.corpus.push(sample.clone());
                     }

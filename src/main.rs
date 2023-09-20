@@ -1,5 +1,6 @@
 use clap::{Arg, Command};
 use nix::unistd::{fork, ForkResult, Pid};
+use std::collections::HashSet;
 use std::path::Path;
 use std::{
     collections::HashMap,
@@ -8,7 +9,6 @@ use std::{
     time::Instant,
 };
 mod config;
-mod execute;
 mod forkserver;
 mod mutate;
 
@@ -56,6 +56,7 @@ fn main() -> io::Result<()> {
     let mut sample_pool:Vec<mutate::Sample>=vec!();
     let mut stats = FuzzingStats::default();
     let mut bp_mapping: HashMap<u64, i64> = HashMap::new();
+    let mut hit_breakpoints:HashSet<u64>=HashSet::new();
     let start = Instant::now();
     let mut flag=true;
     while flag {
@@ -63,7 +64,7 @@ fn main() -> io::Result<()> {
             sample.materialize_sample(FILE);
             let child = forkserver::run_child(&runtime_config, &mut bp_mapping,FILE);
             stats.execute_count += 1;
-            match forkserver::run_parent(child, &bp_mapping){
+            match forkserver::run_parent(child, &bp_mapping,&mut hit_breakpoints){
                 forkserver::ParentStatus::Finished(trace)=>{
                     sample.add_trace(trace);
                     sample_pool.push(sample);
@@ -81,9 +82,12 @@ fn main() -> io::Result<()> {
         
     }
     let elapsed = start.elapsed().as_secs_f64();
-    print!("[{:10.2}] cases {:10} | fcps  {:10.2} | crashes {:10}\n",
+    let hit_breakpoint=hit_breakpoints.capacity() as f64;
+    let all_breakpoints=runtime_config.bpmap.capacity() as f64;
+    println!("[{:10.2}] cases {:10} | speed  {:10.2} | crashes {:10} | HitBreakpoints {:10}] |Coverage Rate {:10.2}%",
             elapsed, stats.execute_count, 
-            stats.execute_count as f64/ elapsed, stats.crash_count);
+            stats.execute_count as f64/ elapsed, stats.crash_count,hit_breakpoints.capacity(),(hit_breakpoint/all_breakpoints)*100.0);
+    
     Ok(())
 
 }
