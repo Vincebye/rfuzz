@@ -40,7 +40,12 @@ fn restore_breakpoint(pid: Pid, addr: u64, orig_value: i64) {
         ptrace::write(pid, addr as *mut c_void, orig_value as *mut c_void).unwrap();
     }
 }
-fn handle_sigstop(pid: Pid, saved_values: &HashMap<u64, i64>, trace: &mut Vec<u64>,hit_breakpoints:&mut HashSet<u64>) {
+fn handle_sigstop(
+    pid: Pid,
+    saved_values: &HashMap<u64, i64>,
+    trace: &mut Vec<u64>,
+    hit_breakpoints: &mut HashSet<u64>,
+) {
     let mut regs = ptrace::getregs(pid).unwrap();
     println!("Hit breakpoint at 0x{:x}", regs.rip - 1);
     hit_breakpoints.insert(regs.rip - 1);
@@ -120,7 +125,7 @@ pub fn run_child(
 pub fn run_parent(
     pid: Pid,
     bp_mapping: &HashMap<u64, i64>,
-    hit_breakpoints:&mut HashSet<u64>
+    hit_breakpoints: &mut HashSet<u64>,
 ) -> ParentStatus {
     //cal converage
 
@@ -130,7 +135,7 @@ pub fn run_parent(
         match waitpid(pid, None) {
             Ok(WaitStatus::Stopped(pid_t, sig_num)) => match sig_num {
                 Signal::SIGTRAP => {
-                    handle_sigstop(pid_t, &bp_mapping, &mut trace,hit_breakpoints);
+                    handle_sigstop(pid_t, &bp_mapping, &mut trace, hit_breakpoints);
                 }
 
                 Signal::SIGSEGV => {
