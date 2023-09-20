@@ -30,6 +30,9 @@ impl Mutator {
         }
     }
 
+    pub fn get_samples_numbers(&self) -> usize {
+        self.samples.capacity()
+    }
     pub fn update(&mut self, samples: &Vec<Sample>) {
         for sample in samples {
             match &sample.trace {

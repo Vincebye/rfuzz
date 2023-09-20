@@ -47,7 +47,7 @@ fn handle_sigstop(
     hit_breakpoints: &mut HashSet<u64>,
 ) {
     let mut regs = ptrace::getregs(pid).unwrap();
-    println!("Hit breakpoint at 0x{:x}", regs.rip - 1);
+    //println!("Hit breakpoint at 0x{:x}", regs.rip - 1);
     hit_breakpoints.insert(regs.rip - 1);
     match saved_values.get(&(regs.rip - 1)) {
         Some(orig) => {

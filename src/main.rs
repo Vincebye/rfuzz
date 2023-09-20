@@ -57,6 +57,8 @@ fn main() -> io::Result<()> {
     let mut stats = FuzzingStats::default();
     let mut bp_mapping: HashMap<u64, i64> = HashMap::new();
     let mut hit_breakpoints: HashSet<u64> = HashSet::new();
+    let all_breakpoints = runtime_config.bpmap.capacity() as f64;
+
     let start = Instant::now();
     let mut flag = true;
     while flag {
@@ -82,9 +84,9 @@ fn main() -> io::Result<()> {
     }
     let elapsed = start.elapsed().as_secs_f64();
     let hit_breakpoint = hit_breakpoints.capacity() as f64;
-    let all_breakpoints = runtime_config.bpmap.capacity() as f64;
-    println!("[{:10.2}] cases {:10} | speed  {:10.2} | crashes {:10} | HitBreakpoints {:10}] |Coverage Rate {:10.2}%",
-            elapsed, stats.execute_count, (stats.execute_count as f64)/ elapsed, stats.crash_count,hit_breakpoints.capacity(),(hit_breakpoint/all_breakpoints)*100.0);
+    let samples_number = mutator.get_samples_numbers();
+    println!("[{:10.2}s] cases {:10} | speed  {:10.2} | crashes {:10} |samples {:10}| HitBreakpoints {:10}] |Coverage Rate {:10.2}%",
+            elapsed, stats.execute_count, (stats.execute_count as f64)/ elapsed, stats.crash_count,samples_number,hit_breakpoints.capacity(),(hit_breakpoint/all_breakpoints)*100.0);
 
     Ok(())
 }
